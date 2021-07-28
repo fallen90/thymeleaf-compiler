@@ -1,4 +1,5 @@
 ///usr/bin/env jbang "$0" "$@" ; exit $?
+//DEPS org.slf4j:slf4j-simple:1.6.1
 //DEPS info.picocli:picocli:4.5.0
 //DEPS org.thymeleaf:thymeleaf:3.0.12.RELEASE
 //DEPS com.fasterxml.jackson.core:jackson-databind:2.11.1
@@ -9,6 +10,7 @@ import picocli.CommandLine.Parameters;
 import picocli.CommandLine.Option;
 
 import org.thymeleaf.TemplateEngine;
+import org.thymeleaf.templateresolver.FileTemplateResolver;
 import org.thymeleaf.context.Context;
 
 import java.util.concurrent.Callable;
@@ -47,30 +49,13 @@ class compile implements Callable<Integer> {
         System.exit(exitCode);
     }
 
-    private String readFile(String filename) {
-        String data = "";
-        try {
-            File myObj = new File(filename);
-            Scanner myReader = new Scanner(myObj);
-            while (myReader.hasNextLine()) {
-                data += myReader.nextLine();
-            }
-            myReader.close();
-        } catch (FileNotFoundException e) {
-            System.out.println("An error occurred.");
-            e.printStackTrace();
-        }
-        return data;
-    }
-
     private void writeFile(String filename, String contents) {
         try {
             FileWriter writer = new FileWriter(filename);
             writer.write(contents);
             writer.close();
         } catch (IOException e) {
-            System.out.println("An error occurred.");
-            e.printStackTrace();
+            System.out.println("An error IOException. " + e.toString());
         }
     }
 
@@ -81,23 +66,42 @@ class compile implements Callable<Integer> {
             LinkedHashMap map = mapper.readValue(file, LinkedHashMap.class);
             return map;
         } catch (Exception e) {
-            System.out.println("An error occurred.");
-            e.printStackTrace();
+            System.out.println("An error occurred. " + e.toString());
         }
 
         return null;
     }
 
-    @Override
-    public Integer call() throws Exception { // your business logic goes here...
-        final TemplateEngine templateEngine = new TemplateEngine();
-        Context ctx = new Context();
+    private FileTemplateResolver templateResolver() {
+        FileTemplateResolver resolver = new FileTemplateResolver();
+        resolver.setSuffix(".html");
+        resolver.setTemplateMode("HTML");
+        return resolver;
+    }
+
+    private LinkedHashMap getData(){
         LinkedHashMap data = this.parsePayload(this.payloadFile);
+        return data;
+    }
 
-        ctx.setVariable(this.entryKey, data);
+    private TemplateEngine createTemplateEngine(){
+        final TemplateEngine templateEngine = new TemplateEngine();
+        templateEngine.setTemplateResolver(this.templateResolver());
+        return templateEngine;
+    }
 
-        String output = templateEngine.process(readFile(this.inputFile), ctx);
-        writeFile(this.outputFile, output);
+    @Override
+    public Integer call() { // your business logic goes here...
+         try {
+            TemplateEngine templateEngine = this.createTemplateEngine();
+            Context ctx = new Context();
+            ctx.setVariable(this.entryKey, this.getData());
+            String output = templateEngine.process(this.inputFile, ctx);
+            writeFile(this.outputFile, output);
+        } catch(org.thymeleaf.exceptions.TemplateProcessingException ex){
+            System.out.println("\033[0;31m" + "[THYMELEAF]\n\n" + ex.getMessage() +  "\033[0m");
+        }
+        
         return 0;
     }
 }
